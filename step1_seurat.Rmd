@@ -61,12 +61,16 @@ tar -xvf Visium_FFPE_Mouse_Brain_spatial.tar.gz
 
 
 ```{r Charger objet Seurat}
-genomics = "/DATA/GitHub/part1seurat"
+genomics = "/DATA/GitHub/part1seurat/data"
 bc_matrix.h5 = "Visium_FFPE_Mouse_Brain_filtered_feature_bc_matrix.h5"
 objet_seurat <- Load10X_Spatial(
   genomics,
   bc_matrix.h5
 )
+
+# genomics <- "/DATA/GitHub/part1seurat"
+# bc_matrix.h5 <- "Visium_FFPE_Mouse_Brain_filtered_feature_bc_matrix.h5"
+# objet_seurat <- Load10X_Spatial(genomics, bc_matrix.h5)
 ```
 
 # 2. Contrôle Qualité
