@@ -2,7 +2,9 @@
 title: 'ST scRNAseq 1ère partie : Prétraitement Visualisation & Visualisation'
 author: "Guillaume SOUEDE"
 date: "24 mai 2023"
-output: html_document
+output:
+  pdf_document: default
+  html_document: default
 ---
 
 # 0. Vue d'ensemble
@@ -68,7 +70,7 @@ objet_seurat <- Load10X_Spatial(
   bc_matrix.h5
 )
 
-# genomics <- "/DATA/GitHub/part1seurat"
+# genomics <- "/DATA/GitHub/part1seurat/data"
 # bc_matrix.h5 <- "Visium_FFPE_Mouse_Brain_filtered_feature_bc_matrix.h5"
 # objet_seurat <- Load10X_Spatial(genomics, bc_matrix.h5)
 ```
