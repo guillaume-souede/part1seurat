@@ -1,13 +1,18 @@
 ---
 title: 'ST scRNAseq 1ère partie : Prétraitement Visualisation & Visualisation'
 author: "Guillaume SOUEDE"
-date: "24 mai 2023"
+date: "01 juin 2023"
 output:
   pdf_document: default
   html_document: default
 ---
 
 # 0. Vue d'ensemble
+
+```{r setup, include=T}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
 ## 0.0 Définir les répertoires et installer les Packages
 
 ```{r eval=FALSE, include=FALSE}
@@ -23,7 +28,7 @@ sudo apt-get install libhdf5-serial-dev
 # 1. Chargement des Données
 ## 1.1 Chargement des Packages
 Démarrer les packages préalablement installés.
-```{r library, echo=FALSE, message=FALSE, warning=FALSE}
+```{r library, echo=T, message=FALSE, warning=FALSE}
 # renv::install()
 library(Rfast2)
 library(Matrix)
@@ -36,18 +41,19 @@ library(ggplot2)
 library(patchwork)
 library(dplyr)
 library(spacexr)
+library(hdf5r)
 ```
 
 ## 1.1. Récupération des Données
 
-Sur le site de 10xgenomics, onglet Batch download, choisir wget.
-Dans le paragraphe Output files, récupérer :
--> le 4e fichier : Feature / barcode matrix HDF5 (filtered)
--> le 5e fichier : Feature / barcode matrix (filtered)
--> le 9e fichier : Spatial imaging data
-! contient 2 images haute/basse résolution de la coupe, à utiliser dans la vignette 2 !
+Sur le site de 10xgenomics, onglet Batch download, choisir wget.  
+Dans le paragraphe Output files, récupérer :  
+-> le 4e fichier : Feature / barcode matrix HDF5 (filtered)  
+-> le 5e fichier : Feature / barcode matrix (filtered)  
+-> le 9e fichier : Spatial imaging data  
+! contient 2 images haute/basse résolution de la coupe, à utiliser dans la vignette 2 !  
 
-```{bash 10X Genomics, eval=FALSE, include=FALSE}
+```{bash 10X Genomics, eval=FALSE, include=T}
 # Feature / barcode matrix HDF5 (filtered)
 wget https://cf.10xgenomics.com/samples/spatial-exp/1.3.0/Visium_FFPE_Mouse_Brain/Visium_FFPE_Mouse_Brain_filtered_feature_bc_matrix.h5
 
@@ -61,31 +67,43 @@ wget https://cf.10xgenomics.com/samples/spatial-exp/1.3.0/Visium_FFPE_Mouse_Brai
 tar -xvf Visium_FFPE_Mouse_Brain_spatial.tar.gz
 ```
 
+```{r seurat_donnees_brain}
+# genomics = "/DATA/GitHub/part1seurat/data/brain"
+# bc_matrix.h5 = "Visium_FFPE_Mouse_Brain_filtered_feature_bc_matrix.h5"
+# objet_seurat <- Load10X_Spatial(
+#   genomics,
+#   bc_matrix.h5
+# )
+```
 
-```{r Charger objet Seurat}
-genomics = "/DATA/GitHub/part1seurat/data"
-bc_matrix.h5 = "Visium_FFPE_Mouse_Brain_filtered_feature_bc_matrix.h5"
-objet_seurat <- Load10X_Spatial(
-  genomics,
-  bc_matrix.h5
-)
-
-# genomics <- "/DATA/GitHub/part1seurat/data"
-# bc_matrix.h5 <- "Visium_FFPE_Mouse_Brain_filtered_feature_bc_matrix.h5"
+```{r donnees_kidney}
+# genomics <- "/DATA/GitHub/part1seurat/data/kidney"
+# bc_matrix.h5 <- "Visium_FFPE_Mouse_Kidney_filtered_feature_bc_matrix.h5"
 # objet_seurat <- Load10X_Spatial(genomics, bc_matrix.h5)
 ```
 
+```{r donnees_Seurat}
+library(SeuratData)
+InstallData("stxBrain")
+objet_seurat[["Spatial"]] <- as(brain[["Spatial"]])
+```
+
 # 2. Contrôle Qualité
-Nous vérifions graphiquement la qualité des données.
--> Le graphique de gauche ou Diagramme en violon permet de vérifier que la répartition des cellules en fonction du taux d'identité est cohérente : la quasi-totalité des points doit être superposée au violin plot.
--> Le graphique de droite affiche tous les clusters de cellule sur l'image :  il permet de s'assurer que l'image est bien chargée et les points alignés dessus. 
+Nous vérifions graphiquement la qualité des données.    
+-> Le graphique de gauche ou Diagramme en violon permet de vérifier que la répartition des cellules en fonction du taux d'identité est cohérente : la quasi-totalité des points doit être superposée au violin plot.  
+-> Le graphique de droite affiche tous les clusters de cellule sur l'image :  il permet de s'assurer que l'image est bien chargée et les points alignés dessus.  
+
 ```{r data_processing}
-# Type de visualisation 1 : Diagramme en Violon, montre la distribution de la variable "nCount_Spatial" dans chacune des cellules
+# Type de visualisation 1 : Diagramme en Violon, montre la distribution de la
+# variable "nCount_Spatial" dans chacune des cellules
 # issue de l'objet objet_seurat
-plot1 <- VlnPlot(objet_seurat, features = "nCount_Spatial", pt.size = 0.1) + NoLegend()
+plot1 <- VlnPlot(objet_seurat, features = "nCount_Spatial", pt.size = 0.1) +
+  NoLegend()
 
 # Type de visualisation 2 : Spatial Feature plot de "nCount_Spatial"
-plot2 <- SpatialFeaturePlot(objet_seurat, features = "nCount_Spatial") + theme(legend.position = "right")
+plot2 <- SpatialFeaturePlot(
+  objet_seurat, 
+  features = "nCount_Spatial") + theme(legend.position = "right")
 
 # Afficher les deux plot sur une image
 wrap_plots(plot1, plot2)
@@ -94,60 +112,71 @@ wrap_plots(plot1, plot2)
 # 3. Normalisation SCTransform
 ## 3.1 SCTransform
 
-SCTransform retranscrit une distinction biologique plus nette que la normalisation logarithmique.
+SCTransform retranscrit une distinction biologique plus nette que la normalisation logarithmique.  
 ```{r SCTransform}
-# SCTransform : Modèles "binomiaux négatifs régularisés" de l'expression des gènes 
-# Permet de prendre en compte les artefacts techniques tout en préservant la variance biologique.
-# Utilise une régression pour modéliser les effets de ces variables sur la variance de chaque gène, 
-# et une transformation pour égaliser la variance entre les gènes
+# SCTransform : Modèles "binomiaux négatifs régularisés" de l'expression des 
+# gènes 
+# Permet de prendre en compte les artefacts techniques tout en préservant
+# la variance biologique.
+# Utilise une régression pour modéliser les effets de ces variables sur 
+# la variance de chaque gène, 
+# Et une transformation pour égaliser la variance entre les gènes.
 objet_seurat <- SCTransform(objet_seurat, assay = "Spatial", verbose = FALSE)
 # objet_seurat <- NormalizeData(objet_seurat, verbose = FALSE, assay = "Spatial")
 ```
 
 # 4. ACP, UMAP, Clusters
 ## 4.1 ACP
-L'analyse en composante principale (ACP) est une méthode de réduction de dimensions, qui donne en sortie un graphique de seulement 2 ou 3 dimensions à partir de données décrites sur plus de dimensions. 
+L'analyse en composante principale (ACP) est une méthode de réduction de dimensions, qui donne en sortie un graphique de seulement 2 ou 3 dimensions à partir de données décrites sur plus de dimensions.   
 
-En entrée : objet_seurat
-En sortie : ajout de la PCA et des neighbors à l'objet_seurat
+En entrée : objet_seurat  
+En sortie : ajout de la PCA et des neighbors à l'objet_seurat  
 ```{r dim_red, message=FALSE, warning=FALSE}
-# RunPCA() : effectuer une PCA (Réduction dimensionnelle) sur l'objet "objet_seurat" en utilisant les données de l'assay "SCT"
+# RunPCA() : effectuer une PCA (Réduction dimensionnelle) sur l'objet_seurat 
+# en utilisant les données de l'assay "SCT".
 # verbose = FALSE" : désactiver l'affichage détaillé des informations.
 objet_seurat <- RunPCA(objet_seurat, assay = "SCT", verbose = FALSE)
 
-# FindNeighbors() : identifier les voisins de chaque cellule dans l'objet "objet_seurat", en utilisant la réduction PCA calculée à la ligne précédente
-# dims = 1:30 : les 30 premières dimensions seront utilisées pour exécuter l'analyse UMAP.
+# FindNeighbors() : identifier les voisins de chaque cellule dans objet_seurat,
+# en utilisant la réduction PCA calculée à la ligne précédente,
+# dims = 1:30 : les 30 premières dimensions seront utilisées
+# pour exécuter l'analyse UMAP.
 objet_seurat <- FindNeighbors(objet_seurat, reduction = "pca", dims = 1:30)
 ```
 
 ## 4.2 Clustering
-Le Clustering consiste à regrouper des points de données en fonction de leurs similitudes. L'objectif est de diviser un ensemble de données en groupes/grappes de sorte que les points de données de chaque grappe soient similaires les uns aux autres et différents de ceux des autres grappes. 
+Le Clustering consiste à regrouper des points de données en fonction de leurs similitudes.  
+L'objectif est de diviser un ensemble de données en groupes/grappes de sorte que les points de données de chaque grappe soient similaires les uns aux autres et différents de ceux des autres grappes.   
 
-C'est un regroupement des données d'expression de l'ARN.
+C'est un regroupement des données d'expression de l'ARN.  
 
-En entrée : objet_seurat
-En sortie : ajout des Clusters et UMAP à l'objet_seurat
+En entrée : objet_seurat  
+En sortie : ajout des Clusters et UMAP à l'objet_seurat  
 ```{r clustering, message=FALSE, warning=FALSE}
-# FindClusters() : identification de clusters sur les cellules dans l'objet "objet_seurat" en utilisant les voisins identifiés à la ligne précédente
+# FindClusters() : identification de clusters sur les cellules dans objet_seurat
+# en utilisant les voisins identifiés à la ligne précédente
 objet_seurat <- FindClusters(objet_seurat, verbose = FALSE)
 ```
 
 ## 4.3 UMAP
 ```{r UMAP, message=FALSE, warning=FALSE}
-# RunUMAP() : réduire des dimensions des données à l'aide de l'algorithme UMAP en utilisant la réduction PCA calculée à la première ligne
+# RunUMAP() : réduire des dimensions des données à l'aide de l'algorithme UMAP
+# en utilisant la réduction PCA calculée à la première ligne
 objet_seurat <- RunUMAP(objet_seurat, reduction = "pca", dims = 1:30)
 ```
 
 # 5. Visualisation UMAP, Clusters
-Créer des représentations visuelles de données qui soient informatives.
+Créer des représentations visuelles de données qui soient informatives.  
 
-En entrée : objet_seurat
-En sortie : DimPlot et SpatialDimPlot de l'objet_seurat
+En entrée : objet_seurat  
+En sortie : DimPlot et SpatialDimPlot de l'objet_seurat  
 
 ```{r visualisation}
-# p1 : DimPlot affiche une visualisation en 2Dimensions d'une réduction de dimension.
+# p1 : DimPlot affiche une visualisation en 2Dimensions
+# d'une réduction de dimension.
 p1 <- DimPlot(objet_seurat, reduction = "umap", label = TRUE)
-# p2 : SpatialDimPlot : visualisation en deux 2Dimensions d'une réduction de dimension + inclut  l'emplacement spatial des cellules
+# p2 : SpatialDimPlot : visualisation en deux 2Dimensions
+# d'une réduction de dimension + inclut  l'emplacement spatial des cellules
 p2 <- SpatialDimPlot(objet_seurat, label = TRUE, label.size = 3)
 
 # AFFICHAGE des deux graphiques.
@@ -156,53 +185,87 @@ wrap_plots(p1 + p2)
 
 ## 5.2 Identification des caractéristiques variables spatialement
 
-Seurat propose 2 possibilités pour identifier les caractéristiques moléculaires qui seraient corréelées avec la localisation spatiale dans un tissu. 
+Seurat propose 2 possibilités pour identifier les caractéristiques moléculaires qui seraient corréelées avec la localisation spatiale dans un tissu.   
 
 ### 5.2.1 Méthode 1 : Régions pré-annotées
 
-Ici, on effectue une expression différentielle basée sur des régions anatomiques pré-annotées dans le tissu.
-C'est une recherche de marqueurs (gènes exprimés de manière différentielle) pour créer des classes d'identité.
-Les gènes différentiellement exprimés entre deux groupes choisis seront stockés dans la variable de_markers.
-```{r identification_1}
+Ici, on effectue une expression différentielle basée sur des régions anatomiques pré-annotées dans le tissu.  
+C'est une recherche de marqueurs (gènes exprimés de manière différentielle) pour créer des classes d'identité.  
+Les gènes différentiellement exprimés entre deux groupes choisis seront stockés dans la variable de_markers.  
+```{r identification_1, message=FALSE, warning=FALSE}
 
-# On applique la fonction FindMarkers sur l'objet objet_seurat avec deux arguments, qui correspondent aux identités des groupes de cellules à comparer.
-# Identifier les gènes différentiellement exprimés entre les deux groupes ; puis stockage dans la variable de_markers.
+# On applique la fonction FindMarkers sur l'objet objet_seurat avec 2 arguments,
+# qui correspondent aux identités des groupes de cellules à comparer.
+# Identifier les gènes différentiellement exprimés entre les deux groupes ;
+# puis stockage dans la variable de_markers.
 de_markers <- FindMarkers(objet_seurat, ident.1 = 5, ident.2 = 6)
 
-# SpatialFeaturePlot : graphique de caractéristiques spatiales, visualise la distribution spatiale des niveaux d'expression des gènes dans un tissu ou un échantillon.
-# features = rownames(de_markers)[1:3] : spécifie les caractéristiques des gènes à tracer sur les axes x, y et z du tracé des caractéristiques spatiales (ici, les 3 premièeres lignes du de_markers).
-# alpha = c(0.1, 1) : transparence des points d'arrière-plan (0.1) et d'avant-plan (1).
-SpatialFeaturePlot(object = objet_seurat, features = rownames(de_markers)[1:3], alpha = c(0.1, 1), ncol = 3, interactive = F, crop = T)
+# SpatialFeaturePlot : graphique de caractéristiques spatiales, 
+# visualise la distribution spatiale des niveaux d'expression des gènes
+# dans un tissu ou un échantillon.
+# features = rownames(de_markers)[1:3] : spécifie les caractéristiques des gènes
+# à tracer sur les axes x, y et z du tracé des caractéristiques spatiales
+# (ici, les 3 premièeres lignes du de_markers).
+# alpha = c(0.1, 1) : 
+# transparence des points d'arrière-plan (0.1) et d'avant-plan (1).
+SpatialFeaturePlot(object = objet_seurat, features = rownames(de_markers)[1:3], 
+                   alpha = c(0.1, 1), ncol = 3, interactive = F, crop = T)
 ```
 
 ### 5.2.2 Méthode 2 : Régions non-annotées (TOP GENES)
 
-Ici, on effectue une expression différentielle basée sur des régions anatomiques qui ne sont pas pré-annotées dans le tissu.
-FindSpatiallyVariables() permet de rechercher des caractéristiques présentant une configuration spatiale en l'absence de préannotation.
+Ici, on effectue une expression différentielle basée sur des régions anatomiques qui ne sont pas pré-annotées dans le tissu.  
+FindSpatiallyVariables() permet de rechercher des caractéristiques présentant une configuration spatiale en l'absence de préannotation.  
 
 ```{r identification_2}
 
-# FindSpatiallyVariableFeatures() : identifier les gènes qui présentent des profils d'expression spatialement variables dans différentes régions du tissu.
-# objet_seurat : objet Seurat, contient l'ensemble de données transcriptomiques spatiales.
+# FindSpatiallyVariableFeatures() : identifier les gènes qui présentent des
+# profils d'expression spatialement variables dans différentes régions du tissu.
+# objet_seurat : objet Seurat, contient l'ensemble de données ST.
 # assay (essai) : type de données à utiliser. Ici, SCT.
-# features (caractéristiques) : ensemble des caractéristiques (gènes) à prendre en compte lors de l'identification des gènes variables dans l'espace. Ici, la fonction "VariableFeatures()" va sélectionner les 1000 gènes les + variables.
-# selection.method : méthode à utiliser pour sélectionner les gènes variables dans l'espace. Ici, Moran's I.
-objet_seurat <- FindSpatiallyVariableFeatures(objet_seurat, assay = "SCT", features = VariableFeatures(objet_seurat)[1:1000], selection.method = "moransi")
+# features (caractéristiques) : ensemble des caractéristiques (gènes)
+# à prendre en compte lors de l'identification des gènes variables dans l'espace. 
+# Ici, "VariableFeatures()" sélectionne les 1000 gènes les + variables.
+# selection.method : méthode à utiliser pour sélectionner les gènes 
+# variables dans l'espace. Ici, Moran's I.
+objet_seurat <- FindSpatiallyVariableFeatures(
+  objet_seurat, 
+  assay = "SCT", 
+  features = VariableFeatures(objet_seurat)[1:1000], 
+  selection.method = "moransi"
+  )
 
-# Les 6 premiers gènes identifiés comme étant spatialement variables en utilisant la méthode "Moran's I", à partir des données de objet_seurat.
-top.features <- head(SpatiallyVariableFeatures(objet_seurat, selection.method = "moransi"), 6)
+# Les 6 premiers gènes identifiés comme étant spatialement variables
+# en utilisant la méthode "Moran's I", à partir des données de objet_seurat.
+top.features <- head(SpatiallyVariableFeatures(
+  objet_seurat, 
+  selection.method = "moransi"), 
+  6
+  )
 
-# Les gènes sont affichés en utilisant une disposition en grille (ncol = 3), transparence 10% pour le fond et 100% pour les points.
-SpatialFeaturePlot(objet_seurat, features = top.features, ncol = 3, alpha = c(0.1, 1))
+# Les gènes sont affichés en utilisant une disposition en grille (ncol = 3),
+# transparence 10% pour le fond et 100% pour les points.
+SpatialFeaturePlot(
+  objet_seurat, 
+  features = top.features, 
+  ncol = 3, 
+  alpha = c(0.1, 1)
+  )
 ```
 
 # 6. Export des Données pour le Scorer
 
-Sur R Studio :
+Sur R Studio :  
 ```{r}
-# La table obtenue est la transposée (lignes et colonnes inversées) du dataset counts, afin de correspondre au format utilisé par le SCORER.
-write.table(t(as.matrix(GetAssay(objet_seurat)@counts)), file = 'table_objet_seurat.tsv', sep="\t", row.names = TRUE, col.names=NA)
+# La table obtenue est la transposée (lignes et colonnes inversées) du dataset counts,
+# afin de correspondre au format utilisé par le SCORER.
+write.table(t(as.matrix(GetAssay(objet_seurat)@counts)), 
+            file = '/DATA/GitHub/part1seurat/output/table_objet_seurat.tsv', 
+            sep="\t", 
+            row.names = TRUE, 
+            col.names=NA
+            )
 ```
 
-Récupérer la table table_objet_seurat.tsv téléchargée.
+Récupérer la table table_objet_seurat.tsv téléchargée.  
 
