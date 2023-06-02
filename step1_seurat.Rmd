@@ -85,7 +85,8 @@ tar -xvf Visium_FFPE_Mouse_Brain_spatial.tar.gz
 ```{r donnees_Seurat}
 library(SeuratData)
 InstallData("stxBrain")
-objet_seurat[["Spatial"]] <- as(brain[["Spatial"]])
+objet_seurat <- LoadData("stxBrain", type = "anterior1")
+objet_seurat[["Spatial"]] <- as(objet_seurat[["Spatial"]], Class = "Assay")
 ```
 
 # 2. Contrôle Qualité
